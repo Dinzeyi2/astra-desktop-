@@ -1,14 +1,7 @@
 /**
- * Astra Desktop Proxy
- * ====================
- * Local proxy on 127.0.0.1:8877
- * Intercepts all AI traffic on the device.
- * Calls app.codeastra.dev to tokenize/resolve — same API as the SDK.
- *
- * Outgoing: intercept → tokenize via app.codeastra.dev → forward to AI
- * Incoming: intercept → resolve via app.codeastra.dev → return to user
+ * Astra Desktop Proxy v2
+ * Calls app.codeastra.dev for tokenization and resolution.
  */
-
 'use strict';
 
 const http  = require('http');
@@ -22,331 +15,231 @@ const { generateServerCert } = require('./cert-installer');
 const { logIntercept } = require('../vault/vault');
 
 const store = new Store();
+const ASTRA = 'https://app.codeastra.dev';
 
-const ASTRA_BASE = "https://app.codeastra.dev";
+function getKey() { return store.get('api_key', ''); }
+function setApiKey(k) { store.set('api_key', k); }
 
-function getApiKey() {
-  return store.get('api_key', '');
-}
-
-// ── AI hosts to intercept ─────────────────────────────────────────────────────
 const AI_HOSTS = [
-  'api.openai.com',
-  'chatgpt.com', 'chat.openai.com',
-  'api.anthropic.com', 'claude.ai',
-  'generativelanguage.googleapis.com', 'gemini.google.com',
-  'copilot.microsoft.com', 'sydney.bing.com',
-  'api.perplexity.ai', 'perplexity.ai',
-  'api.mistral.ai', 'api.cohere.ai',
-  'api.together.xyz', 'api.groq.com',
+  'api.openai.com','chatgpt.com','chat.openai.com',
+  'api.anthropic.com','claude.ai',
+  'generativelanguage.googleapis.com','gemini.google.com',
+  'copilot.microsoft.com','sydney.bing.com',
+  'api.perplexity.ai','perplexity.ai',
+  'api.mistral.ai','api.cohere.ai','api.groq.com',
 ];
 
-function isAIHost(hostname) {
-  return AI_HOSTS.some(h => hostname === h || hostname.endsWith('.' + h));
+function isAI(host) {
+  return AI_HOSTS.some(h => host === h || host.endsWith('.' + h));
 }
 
-// ── Astra API calls ───────────────────────────────────────────────────────────
+const TOKEN_RE = /\[CVT:[A-Z]+:[A-F0-9]+\]/g;
 
 async function astraProtect(text) {
-  const key = getApiKey();
+  const key = getKey();
   if (!key) return { protected_text: text, count: 0, entities: [] };
   try {
-    const res = await fetch(`${ASTRA_BASE}/protect/text`, {
-      method:  'POST',
+    const r = await fetch(`${ASTRA}/protect/text`, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Key': key },
-      body:    JSON.stringify({ text }),
+      body: JSON.stringify({ text }),
       timeout: 5000,
     });
-    if (!res.ok) return { protected_text: text, count: 0, entities: [] };
-    return await res.json();
-  } catch (_) {
-    return { protected_text: text, count: 0, entities: [] };
-  }
+    return r.ok ? await r.json() : { protected_text: text, count: 0, entities: [] };
+  } catch (_) { return { protected_text: text, count: 0, entities: [] }; }
 }
 
-async function astraResolveBatch(tokens) {
-  const key = getApiKey();
+async function astraResolve(tokens) {
+  const key = getKey();
   if (!key || !tokens.length) return {};
   try {
-    const res = await fetch(`${ASTRA_BASE}/vault/resolve-batch`, {
-      method:  'POST',
+    const r = await fetch(`${ASTRA}/vault/resolve-batch`, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Key': key },
-      body:    JSON.stringify({ tokens }),
+      body: JSON.stringify({ tokens }),
       timeout: 5000,
     });
-    if (!res.ok) return {};
-    const data = await res.json();
-    return data.resolved || {};
-  } catch (_) {
-    return {};
-  }
+    if (!r.ok) return {};
+    const d = await r.json();
+    return d.resolved || {};
+  } catch (_) { return {}; }
 }
-
-// ── Build system prompt from entities ────────────────────────────────────────
 
 function buildSystemPrompt(entities) {
   if (!entities?.length) return '';
   const lines = [
     'ASTRA ZERO TRUST CONTEXT:',
-    'The following tokens are transparent aliases for sensitive data.',
-    'Treat each token exactly like the real value it represents.',
-    'Use them directly in all actions. The system resolves automatically.',
-    'Do NOT mention tokens, privacy, or protection in your response.',
-    'Just act as if you have the real values and complete the task.',
+    'These tokens are transparent aliases. Treat them as real values.',
+    'Use them directly in all actions. Do NOT mention tokens or privacy.',
+    'Just complete the task as if you have the real values.',
     '',
+    ...entities.map(e => `${e.token} = ${(e.type||'').toLowerCase()} — use directly`),
   ];
-  for (const e of entities) {
-    if (e.token && e.type) {
-      lines.push(`${e.token} = ${e.type.toLowerCase()} — use directly in actions`);
-    }
-  }
   return lines.join('\n');
 }
 
-// ── Process outgoing request body ─────────────────────────────────────────────
-
-const TOKEN_RE = /\[CVT:[A-Z]+:[A-F0-9]+\]/g;
-
-async function processOutgoing(bodyStr, hostname) {
-  if (!bodyStr?.trim()) return { body: bodyStr, count: 0 };
-
+async function processOut(body, host) {
+  if (!body?.trim()) return { body, count: 0 };
   let parsed;
-  try { parsed = JSON.parse(bodyStr); } catch (_) { return { body: bodyStr, count: 0 }; }
+  try { parsed = JSON.parse(body); } catch (_) { return { body, count: 0 }; }
+  if (!Array.isArray(parsed?.messages)) return { body, count: 0 };
 
-  // Chat completion format
-  if (!parsed?.messages || !Array.isArray(parsed.messages)) {
-    return { body: bodyStr, count: 0 };
-  }
+  const text = parsed.messages
+    .filter(m => m.role === 'user')
+    .map(m => typeof m.content === 'string' ? m.content : JSON.stringify(m.content))
+    .join('\n');
 
-  // Collect all text from user messages
-  const userMessages = parsed.messages.filter(m => m.role === 'user');
-  const allText      = userMessages.map(m =>
-    typeof m.content === 'string' ? m.content :
-    Array.isArray(m.content) ? m.content.filter(c => c.type === 'text').map(c => c.text).join(' ') : ''
-  ).join('\n');
+  if (!text.trim()) return { body, count: 0 };
 
-  if (!allText.trim()) return { body: bodyStr, count: 0 };
+  const result = await astraProtect(text);
+  if (!result.count) return { body, count: 0 };
 
-  // Call app.codeastra.dev to protect
-  const result = await astraProtect(allText);
-  if (!result.count || result.count === 0) return { body: bodyStr, count: 0 };
-
-  // Build token map: original → token
-  const tokenMap = {};
+  // Build replacement map
+  const map = {};
   for (const e of (result.entities || [])) {
-    if (e.original && e.token) tokenMap[e.original] = e.token;
+    if (e.original && e.token) map[e.original] = e.token;
   }
 
-  // Replace real values in all messages
-  parsed.messages = parsed.messages.map(msg => {
-    if (msg.role === 'system') return msg;
-    let content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-    for (const [real, token] of Object.entries(tokenMap)) {
-      content = content.replaceAll(real, token);
-    }
-    return { ...msg, content };
+  // Replace in messages
+  parsed.messages = parsed.messages.map(m => {
+    if (m.role === 'system') return m;
+    let c = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+    for (const [real, tok] of Object.entries(map)) c = c.replaceAll(real, tok);
+    return { ...m, content: c };
   });
 
   // Inject system prompt
-  const systemPrompt = buildSystemPrompt(result.entities);
-  const existingSystem = parsed.messages.find(m => m.role === 'system');
-  if (existingSystem) {
-    existingSystem.content = systemPrompt + '\n\n' + existingSystem.content;
-  } else {
-    parsed.messages = [{ role: 'system', content: systemPrompt }, ...parsed.messages];
-  }
+  const sp = buildSystemPrompt(result.entities);
+  const ex = parsed.messages.find(m => m.role === 'system');
+  if (ex) ex.content = sp + '\n\n' + ex.content;
+  else    parsed.messages = [{ role: 'system', content: sp }, ...parsed.messages];
 
-  logIntercept(hostname, result.count);
-
-  console.log(`[Astra Proxy] Protected ${result.count} values → ${hostname}`);
+  logIntercept(host, result.count);
+  console.log(`[Astra] Protected ${result.count} values → ${host}`);
   return { body: JSON.stringify(parsed), count: result.count };
 }
 
-// ── Process incoming response body ────────────────────────────────────────────
-
-async function processIncoming(bodyStr) {
-  if (!bodyStr) return bodyStr;
+async function processIn(body) {
   TOKEN_RE.lastIndex = 0;
-  if (!TOKEN_RE.test(bodyStr)) return bodyStr;
-
-  const tokens = [...new Set(bodyStr.match(/\[CVT:[A-Z]+:[A-F0-9]+\]/g) || [])];
-  if (!tokens.length) return bodyStr;
-
-  const resolved = await astraResolveBatch(tokens);
-  if (!Object.keys(resolved).length) return bodyStr;
-
-  let result = bodyStr;
-  for (const [token, real] of Object.entries(resolved)) {
-    if (real) result = result.replaceAll(token, real);
-  }
+  if (!TOKEN_RE.test(body || '')) return body;
+  const tokens = [...new Set((body.match(/\[CVT:[A-Z]+:[A-F0-9]+\]/g) || []))];
+  if (!tokens.length) return body;
+  const resolved = await astraResolve(tokens);
+  let result = body;
+  for (const [t, v] of Object.entries(resolved)) if (v) result = result.replaceAll(t, v);
   return result;
 }
 
-// ── Proxy server ──────────────────────────────────────────────────────────────
+let _ca = null, _caKey = null;
+function setCA(cert, key) { _ca = cert; _caKey = key; }
 
-let proxyServer = null;
-let _caCert = null, _caKey = null;
-
-function setCA(cert, key) {
-  _caCert = cert;
-  _caKey  = key;
-}
+let srv = null;
 
 async function startProxy(port, caCert, caKey) {
-  if (caCert) { _caCert = caCert; _caKey = caKey; }
+  if (caCert) { _ca = caCert; _caKey = caKey; }
 
-  proxyServer = http.createServer(async (req, res) => {
-    const parsed   = url.parse(req.url);
-    const hostname = parsed.hostname || (req.headers.host || '').split(':')[0];
-
-    if (!isAIHost(hostname)) {
-      return passthrough(req, res);
-    }
+  srv = http.createServer(async (req, res) => {
+    const parsed = url.parse(req.url);
+    const host   = parsed.hostname || (req.headers.host || '').split(':')[0];
+    if (!isAI(host)) return passthrough(req, res);
 
     let body = '';
-    req.on('data', chunk => { body += chunk.toString(); });
+    req.on('data', c => { body += c.toString(); });
     req.on('end', async () => {
       try {
-        const { body: processed, count } = await processOutgoing(body, hostname);
-
-        const options = {
-          hostname,
-          port:    parsed.port || 80,
-          path:    parsed.path || '/',
-          method:  req.method,
-          headers: { ...req.headers, 'content-length': Buffer.byteLength(processed || body) },
+        const { body: out } = await processOut(body, host);
+        const opts = {
+          hostname: host, port: parsed.port || 80,
+          path: parsed.path || '/', method: req.method,
+          headers: { ...req.headers, 'content-length': Buffer.byteLength(out || body) },
         };
-
-        const proxyReq = http.request(options, proxyRes => {
-          let responseBody = '';
-          proxyRes.on('data', c => { responseBody += c.toString(); });
+        const pr = http.request(opts, proxyRes => {
+          let rb = '';
+          proxyRes.on('data', c => { rb += c.toString(); });
           proxyRes.on('end', async () => {
-            const final = await processIncoming(responseBody);
+            const final = await processIn(rb);
             res.writeHead(proxyRes.statusCode, proxyRes.headers);
             res.end(final);
           });
         });
-
-        proxyReq.on('error', err => { res.writeHead(502); res.end(err.message); });
-        proxyReq.write(processed || body);
-        proxyReq.end();
-      } catch (err) {
-        res.writeHead(500); res.end(err.message);
-      }
+        pr.on('error', e => { res.writeHead(502); res.end(e.message); });
+        pr.write(out || body);
+        pr.end();
+      } catch (e) { res.writeHead(500); res.end(e.message); }
     });
   });
 
-  // HTTPS CONNECT
-  proxyServer.on('connect', (req, clientSocket, head) => {
-    const [hostname, portStr] = req.url.split(':');
+  // HTTPS CONNECT tunnel
+  srv.on('connect', (req, sock, head) => {
+    const [host, portStr] = req.url.split(':');
     const port = parseInt(portStr) || 443;
 
-    if (!isAIHost(hostname)) {
+    if (!isAI(host) || !_ca) {
       // Pass through
-      const serverSocket = net.connect(port, hostname, () => {
-        clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-        serverSocket.write(head);
-        serverSocket.pipe(clientSocket);
-        clientSocket.pipe(serverSocket);
+      const s = net.connect(port, host, () => {
+        sock.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+        s.write(head); s.pipe(sock); sock.pipe(s);
       });
-      serverSocket.on('error', () => clientSocket.destroy());
+      s.on('error', () => sock.destroy());
       return;
     }
 
-    // Intercept HTTPS for AI hosts
-    if (!_caCert || !_caKey) {
-      // No cert — pass through without interception
-      const serverSocket = net.connect(port, hostname, () => {
-        clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-        serverSocket.write(head);
-        serverSocket.pipe(clientSocket);
-        clientSocket.pipe(serverSocket);
-      });
-      serverSocket.on('error', () => clientSocket.destroy());
-      return;
-    }
+    // Intercept with TLS
+    const { cert, key } = generateServerCert(host, _ca, _caKey);
+    sock.write('HTTP/1.1 200 Connection Established\r\n\r\n');
 
-    // Generate server cert for this hostname
-    const { cert, key } = generateServerCert(hostname, _caCert, _caKey);
-
-    clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-
-    // TLS server to intercept client connection
-    const tlsServer = tls.createServer({ cert, key }, tlsClientSocket => {
-      let requestData = '';
-
-      tlsClientSocket.on('data', chunk => { requestData += chunk.toString(); });
-
-      tlsClientSocket.on('end', async () => {
-        if (!requestData) return;
-
-        // Parse body from HTTP over TLS
-        const headerEnd = requestData.indexOf('\r\n\r\n');
-        const body      = headerEnd !== -1 ? requestData.slice(headerEnd + 4) : requestData;
-        const headers   = headerEnd !== -1 ? requestData.slice(0, headerEnd) : '';
-
+    const tlsSrv = tls.createServer({ cert, key }, tlsSock => {
+      let data = '';
+      tlsSock.on('data', c => { data += c.toString(); });
+      tlsSock.on('end', async () => {
+        if (!data) return;
+        const hi = data.indexOf('\r\n\r\n');
+        const body = hi !== -1 ? data.slice(hi + 4) : data;
         try {
-          const { body: processed } = await processOutgoing(body, hostname);
-
-          // Connect to real server
-          const tlsServerSocket = tls.connect({
-            host: hostname, port, servername: hostname, rejectUnauthorized: true,
-          }, () => {
-            // Rebuild request with processed body
-            const contentLength = Buffer.byteLength(processed || body);
-            const newHeaders    = headers.replace(
-              /content-length:\s*\d+/i,
-              `Content-Length: ${contentLength}`
-            );
-            tlsServerSocket.write(`${newHeaders}\r\n\r\n`);
-            tlsServerSocket.write(processed || body);
+          const { body: out } = await processOut(body, host);
+          const remote = tls.connect({ host, port, servername: host, rejectUnauthorized: true }, () => {
+            const cl = Buffer.byteLength(out || body);
+            const hdr = (hi !== -1 ? data.slice(0, hi) : '').replace(/content-length:\s*\d+/i, `Content-Length: ${cl}`);
+            remote.write(`${hdr}\r\n\r\n`);
+            remote.write(out || body);
           });
-
-          let responseData = '';
-          tlsServerSocket.on('data', c => { responseData += c.toString(); });
-          tlsServerSocket.on('end', async () => {
-            const final = await processIncoming(responseData);
-            tlsClientSocket.write(final);
-            tlsClientSocket.end();
+          let rb = '';
+          remote.on('data', c => { rb += c.toString(); });
+          remote.on('end', async () => {
+            const final = await processIn(rb);
+            tlsSock.write(final);
+            tlsSock.end();
           });
-
-          tlsServerSocket.on('error', () => tlsClientSocket.destroy());
-        } catch (err) {
-          tlsClientSocket.write(`HTTP/1.1 500 Internal Server Error\r\n\r\n${err.message}`);
-          tlsClientSocket.end();
+          remote.on('error', () => tlsSock.destroy());
+        } catch (e) {
+          tlsSock.write(`HTTP/1.1 500 Error\r\n\r\n${e.message}`);
+          tlsSock.end();
         }
       });
     });
-
-    tlsServer.on('error', () => clientSocket.destroy());
-    tlsServer.emit('connection', clientSocket);
+    tlsSrv.on('error', () => sock.destroy());
+    tlsSrv.emit('connection', sock);
   });
 
   return new Promise((resolve, reject) => {
-    proxyServer.listen(port, '127.0.0.1', () => {
+    srv.listen(port, '127.0.0.1', () => {
       console.log(`[Astra Proxy] Listening on 127.0.0.1:${port} → routing through app.codeastra.dev`);
       resolve();
     });
-    proxyServer.on('error', reject);
+    srv.on('error', reject);
   });
 }
 
 async function stopProxy() {
-  if (proxyServer) { proxyServer.close(); proxyServer = null; }
+  if (srv) { srv.close(); srv = null; }
 }
 
 function passthrough(req, res) {
-  const parsed  = url.parse(req.url);
-  const options = {
-    hostname: parsed.hostname, port: parsed.port || 80,
-    path: parsed.path, method: req.method, headers: req.headers,
-  };
-  const proxyReq = http.request(options, proxyRes => {
-    res.writeHead(proxyRes.statusCode, proxyRes.headers);
-    proxyRes.pipe(res);
-  });
-  proxyReq.on('error', () => res.end());
-  req.pipe(proxyReq);
+  const p    = url.parse(req.url);
+  const opts = { hostname: p.hostname, port: p.port || 80, path: p.path, method: req.method, headers: req.headers };
+  const pr   = http.request(opts, pr2 => { res.writeHead(pr2.statusCode, pr2.headers); pr2.pipe(res); });
+  pr.on('error', () => res.end());
+  req.pipe(pr);
 }
 
-module.exports = { startProxy, stopProxy, setCA };
+module.exports = { startProxy, stopProxy, setCA, setApiKey };
