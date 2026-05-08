@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Astra Settings</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 24px;
+      user-select: none;
+      -webkit-app-region: drag;
+    }
+    .content { -webkit-app-region: no-drag; }
+    h1 { font-size: 18px; font-weight: 700; color: #22c55e; margin-bottom: 4px; }
+    .subtitle { font-size: 12px; color: #64748b; margin-bottom: 24px; }
+
+    .stat-row {
+      display: flex; gap: 12px; margin-bottom: 24px;
+    }
+    .stat {
+      flex: 1; background: #1e293b; border-radius: 8px;
+      padding: 12px; text-align: center;
+    }
+    .stat-num  { font-size: 28px; font-weight: 700; color: #22c55e; }
+    .stat-label { font-size: 11px; color: #64748b; margin-top: 2px; }
+
+    .section { margin-bottom: 20px; }
+    label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 6px; }
+    input[type="text"], input[type="password"] {
+      width: 100%; padding: 8px 12px;
+      background: #1e293b; border: 1px solid #334155;
+      border-radius: 6px; color: #e2e8f0; font-size: 13px;
+      outline: none;
+    }
+    input:focus { border-color: #22c55e; }
+
+    .toggle-row {
+      display: flex; align-items: center; justify-content: space-between;
+      background: #1e293b; border-radius: 8px; padding: 12px 16px;
+      margin-bottom: 12px;
+    }
+    .toggle-label { font-size: 13px; color: #e2e8f0; }
+    .toggle-sub   { font-size: 11px; color: #64748b; margin-top: 2px; }
+
+    .toggle {
+      position: relative; width: 44px; height: 24px;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0; background: #334155;
+      border-radius: 24px; cursor: pointer; transition: .2s;
+    }
+    .slider:before {
+      content: ''; position: absolute;
+      width: 18px; height: 18px; left: 3px; bottom: 3px;
+      background: white; border-radius: 50%; transition: .2s;
+    }
+    input:checked + .slider { background: #22c55e; }
+    input:checked + .slider:before { transform: translateX(20px); }
+
+    .btn {
+      width: 100%; padding: 10px; border: none; border-radius: 8px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+      margin-bottom: 8px; transition: opacity .2s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: #22c55e; color: #0f172a; }
+    .btn-secondary { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+    .btn-danger { background: #ef444422; color: #ef4444; border: 1px solid #ef444444; }
+
+    .audit {
+      background: #1e293b; border-radius: 8px; padding: 12px;
+      max-height: 160px; overflow-y: auto; font-family: monospace; font-size: 11px;
+    }
+    .audit-row { color: #64748b; margin-bottom: 4px; }
+    .audit-row span { color: #22c55e; }
+
+    .status-dot {
+      display: inline-block; width: 8px; height: 8px;
+      border-radius: 50%; background: #22c55e;
+      margin-right: 6px; animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
+    }
+  </style>
+</head>
+<body>
+  <div class="content">
+    <h1>🛡 Astra</h1>
+    <p class="subtitle">Agentic Capability with Zero Trust Infrastructure</p>
+
+    <div class="stat-row">
+      <div class="stat">
+        <div class="stat-num" id="stat-today">0</div>
+        <div class="stat-label">Protected today</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num" id="stat-total">0</div>
+        <div class="stat-label">Total intercepted</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num" id="stat-tokens">0</div>
+        <div class="stat-label">Tokens in vault</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="toggle-row">
+        <div>
+          <div class="toggle-label">
+            <span class="status-dot" id="status-dot"></span>
+            Protection Active
+          </div>
+          <div class="toggle-sub">Intercepts all AI traffic on this device</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="toggle-proxy">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="section">
+      <label>Codeastra API Key</label>
+      <input type="password" id="api-key" placeholder="sk-guard-xxx">
+    </div>
+
+    <div class="section">
+      <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+      <button class="btn btn-secondary" onclick="loadAuditLog()">View Audit Log</button>
+      <button class="btn btn-danger" onclick="resetStats()">Reset Stats</button>
+    </div>
+
+    <div class="section" id="audit-section" style="display:none">
+      <label>Recent Intercepts</label>
+      <div class="audit" id="audit-log"></div>
+    </div>
+  </div>
+
+  <script>
+    async function load() {
+      const [stats, settings] = await Promise.all([
+        window.astra.getStats(),
+        window.astra.getSettings(),
+      ]);
+
+      document.getElementById('stat-today').textContent  = stats.today  || 0;
+      document.getElementById('stat-total').textContent  = stats.total  || 0;
+      document.getElementById('stat-tokens').textContent = stats.tokens || 0;
+
+      document.getElementById('api-key').value          = settings.api_key || '';
+      document.getElementById('toggle-proxy').checked   = settings.proxy_enabled;
+
+      const dot = document.getElementById('status-dot');
+      dot.style.background = settings.proxy_enabled ? '#22c55e' : '#ef4444';
+    }
+
+    document.getElementById('toggle-proxy').addEventListener('change', async e => {
+      await window.astra.toggleProxy(e.target.checked);
+      const dot = document.getElementById('status-dot');
+      dot.style.background = e.target.checked ? '#22c55e' : '#ef4444';
+    });
+
+    async function saveSettings() {
+      const apiKey = document.getElementById('api-key').value;
+      await window.astra.saveSettings({ api_key: apiKey });
+      const btn = document.querySelector('.btn-primary');
+      btn.textContent = '✓ Saved';
+      setTimeout(() => btn.textContent = 'Save Settings', 2000);
+    }
+
+    async function resetStats() {
+      await window.astra.resetStats();
+      load();
+    }
+
+    async function loadAuditLog() {
+      const section = document.getElementById('audit-section');
+      const log     = document.getElementById('audit-log');
+      section.style.display = 'block';
+
+      const entries = await window.astra.getAuditLog();
+      log.innerHTML = entries.length
+        ? entries.map(e => `
+            <div class="audit-row">
+              ${new Date(e.timestamp * 1000).toLocaleTimeString()} —
+              <span>${e.tokens_in}</span> values protected →
+              ${e.hostname || 'ai-endpoint'}
+            </div>`).join('')
+        : '<div class="audit-row">No intercepts yet</div>';
+    }
+
+    load();
+    setInterval(load, 5000);
+  </script>
+</body>
+</html>
