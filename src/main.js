@@ -45,10 +45,8 @@ app.whenReady().then(async () => {
     installCertSilently();
   }
 
-  // Open settings on first run so user can add API key
-  if (!store.get('api_key', '')) {
-    setTimeout(() => openSettings(), 1000);
-  }
+  // Always open settings on launch so user can see it
+  setTimeout(() => openSettings(), 1500);
 });
 
 app.on('before-quit', async () => {
