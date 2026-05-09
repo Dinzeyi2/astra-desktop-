@@ -76,47 +76,55 @@ async function disableSystemProxy() {
 // ── Cert installation ─────────────────────────────────────────────────────────
 
 async function installCertSilently() {
-  // Write cert to disk then run security command
+  const { exec } = require('child_process');
   const { writeCertToTemp } = require('./proxy/cert-installer');
   const certPath = writeCertToTemp(CA.certPem);
 
-  const { response } = await dialog.showMessageBox({
-    type:      'info',
-    title:     'Astra — One Time Setup',
-    message:   'Install Security Certificate',
-    detail:    'Astra needs to install a local certificate to protect HTTPS traffic to AI services.\n\nYou will be asked for your Mac password once. This is a one-time step.',
-    buttons:   ['Install Now', 'Skip'],
-    defaultId: 0,
-    cancelId:  1,
-  });
+  return new Promise((resolve) => {
+    // Use a single-quoted AppleScript string to avoid escaping issues
+    const cmd = [
+      'osascript',
+      '-e',
+      `'do shell script "security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ${certPath}" with administrator privileges'`
+    ].join(' ');
 
-  if (response === 1) {
-    console.log('[Astra] Certificate skipped');
-    return;
-  }
-
-  const { exec } = require('child_process');
-  const script   = `do shell script "security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain '${certPath}'" with administrator privileges`;
-
-  exec(`osascript -e "${script.replace(/"/g, '\\"')}"`, (err) => {
-    if (err) {
-      console.error('[Astra] Cert install failed:', err.message);
-      dialog.showMessageBox({
-        type:    'warning',
-        title:   'Certificate Not Installed',
-        message: 'You can install it manually later from Settings.',
-        buttons: ['OK'],
-      });
-    } else {
-      store.set('cert_installed', true);
-      console.log('[Astra] Certificate installed');
-      dialog.showMessageBox({
-        type:    'info',
-        title:   '🛡 Astra Ready',
-        message: 'Certificate installed. Astra is now protecting all AI traffic.',
-        buttons: ['OK'],
-      });
-    }
+    exec(cmd, (err) => {
+      if (err) {
+        // Fallback: use sudo via Terminal app
+        const sudoCmd = `osascript -e 'tell application "Terminal" to do script "sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ${certPath} && echo DONE"' -e 'tell application "Terminal" to activate'`;
+        exec(sudoCmd, (err2) => {
+          if (err2) {
+            // Last resort: show the manual command
+            dialog.showMessageBox({
+              type:    'info',
+              title:   'One Manual Step Required',
+              message: 'Run this command in Terminal to finish setup:',
+              detail:  `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ${certPath}`,
+              buttons: ['Copy Command', 'OK'],
+            }).then(({ response }) => {
+              if (response === 0) {
+                require('electron').clipboard.writeText(
+                  `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ${certPath}`
+                );
+              }
+            });
+          } else {
+            store.set('cert_installed', true);
+          }
+          resolve();
+        });
+      } else {
+        store.set('cert_installed', true);
+        console.log('[Astra] Certificate installed successfully');
+        dialog.showMessageBox({
+          type:    'info',
+          title:   '🛡 Astra Ready',
+          message: 'Certificate installed. Full HTTPS protection active.',
+          buttons: ['OK'],
+        });
+        resolve();
+      }
+    });
   });
 }
 
