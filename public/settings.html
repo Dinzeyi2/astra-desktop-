@@ -4,141 +4,157 @@
   <meta charset="UTF-8">
   <title>Astra Settings</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0f172a;
-      color: #e2e8f0;
-      padding: 24px;
-      user-select: none;
-      -webkit-app-region: drag;
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      background:#0f172a;color:#e2e8f0;
+      padding:0;user-select:none;-webkit-app-region:drag;
+      height:100vh;display:flex;flex-direction:column;
     }
-    .content { -webkit-app-region: no-drag; }
-    h1 { font-size: 18px; font-weight: 700; color: #22c55e; margin-bottom: 4px; }
-    .subtitle { font-size: 12px; color: #64748b; margin-bottom: 24px; }
+    .titlebar{
+      height:40px;display:flex;align-items:center;
+      padding:0 16px;-webkit-app-region:drag;
+      border-bottom:1px solid #1e293b;flex-shrink:0;
+    }
+    .titlebar h1{font-size:14px;font-weight:600;color:#22c55e;margin-left:70px;}
+    .content{padding:20px;overflow-y:auto;flex:1;-webkit-app-region:no-drag;}
 
-    .stat-row {
-      display: flex; gap: 12px; margin-bottom: 24px;
+    .status-banner{
+      background:#1e293b;border:1px solid #22c55e33;
+      border-radius:10px;padding:14px 16px;
+      display:flex;align-items:center;gap:12px;margin-bottom:16px;
     }
-    .stat {
-      flex: 1; background: #1e293b; border-radius: 8px;
-      padding: 12px; text-align: center;
-    }
-    .stat-num  { font-size: 28px; font-weight: 700; color: #22c55e; }
-    .stat-label { font-size: 11px; color: #64748b; margin-top: 2px; }
+    .dot{width:10px;height:10px;border-radius:50%;background:#22c55e;flex-shrink:0;animation:pulse 2s infinite;}
+    .dot.off{background:#ef4444;animation:none;}
+    @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+    .status-text{flex:1;}
+    .status-title{font-size:13px;font-weight:600;color:#e2e8f0;}
+    .status-sub{font-size:11px;color:#64748b;margin-top:2px;}
 
-    .section { margin-bottom: 20px; }
-    label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 6px; }
-    input[type="text"], input[type="password"] {
-      width: 100%; padding: 8px 12px;
-      background: #1e293b; border: 1px solid #334155;
-      border-radius: 6px; color: #e2e8f0; font-size: 13px;
-      outline: none;
-    }
-    input:focus { border-color: #22c55e; }
+    .stats{display:flex;gap:10px;margin-bottom:16px;}
+    .stat{flex:1;background:#1e293b;border-radius:8px;padding:12px;text-align:center;}
+    .stat-n{font-size:26px;font-weight:700;color:#22c55e;}
+    .stat-l{font-size:10px;color:#64748b;margin-top:2px;}
 
-    .toggle-row {
-      display: flex; align-items: center; justify-content: space-between;
-      background: #1e293b; border-radius: 8px; padding: 12px 16px;
-      margin-bottom: 12px;
-    }
-    .toggle-label { font-size: 13px; color: #e2e8f0; }
-    .toggle-sub   { font-size: 11px; color: #64748b; margin-top: 2px; }
+    .section{margin-bottom:16px;}
+    .section label{display:block;font-size:11px;color:#64748b;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;}
 
-    .toggle {
-      position: relative; width: 44px; height: 24px;
+    .input-row{display:flex;gap:8px;}
+    input[type=text],input[type=password]{
+      flex:1;padding:9px 12px;
+      background:#1e293b;border:1px solid #334155;
+      border-radius:8px;color:#e2e8f0;font-size:13px;outline:none;
+      font-family:monospace;
     }
-    .toggle input { opacity: 0; width: 0; height: 0; }
-    .slider {
-      position: absolute; inset: 0; background: #334155;
-      border-radius: 24px; cursor: pointer; transition: .2s;
-    }
-    .slider:before {
-      content: ''; position: absolute;
-      width: 18px; height: 18px; left: 3px; bottom: 3px;
-      background: white; border-radius: 50%; transition: .2s;
-    }
-    input:checked + .slider { background: #22c55e; }
-    input:checked + .slider:before { transform: translateX(20px); }
+    input:focus{border-color:#22c55e;}
 
-    .btn {
-      width: 100%; padding: 10px; border: none; border-radius: 8px;
-      font-size: 14px; font-weight: 600; cursor: pointer;
-      margin-bottom: 8px; transition: opacity .2s;
+    .btn{
+      padding:9px 16px;border:none;border-radius:8px;
+      font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s;
+      white-space:nowrap;
     }
-    .btn:hover { opacity: 0.85; }
-    .btn-primary { background: #22c55e; color: #0f172a; }
-    .btn-secondary { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
-    .btn-danger { background: #ef444422; color: #ef4444; border: 1px solid #ef444444; }
+    .btn:hover{opacity:.85;}
+    .btn-green{background:#22c55e;color:#0f172a;}
+    .btn-ghost{background:#1e293b;color:#94a3b8;border:1px solid #334155;}
+    .btn-red{background:#ef444422;color:#ef4444;border:1px solid #ef444444;}
+    .btn-full{width:100%;margin-bottom:8px;}
 
-    .audit {
-      background: #1e293b; border-radius: 8px; padding: 12px;
-      max-height: 160px; overflow-y: auto; font-family: monospace; font-size: 11px;
+    .toggle-row{
+      background:#1e293b;border-radius:8px;padding:12px 14px;
+      display:flex;align-items:center;justify-content:space-between;
+      margin-bottom:8px;
     }
-    .audit-row { color: #64748b; margin-bottom: 4px; }
-    .audit-row span { color: #22c55e; }
+    .tl{font-size:13px;color:#e2e8f0;}
+    .ts{font-size:11px;color:#64748b;margin-top:2px;}
+    .toggle{position:relative;width:40px;height:22px;flex-shrink:0;}
+    .toggle input{opacity:0;width:0;height:0;}
+    .slider{position:absolute;inset:0;background:#334155;border-radius:22px;cursor:pointer;transition:.2s;}
+    .slider:before{content:'';position:absolute;width:16px;height:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s;}
+    input:checked+.slider{background:#22c55e;}
+    input:checked+.slider:before{transform:translateX(18px);}
 
-    .status-dot {
-      display: inline-block; width: 8px; height: 8px;
-      border-radius: 50%; background: #22c55e;
-      margin-right: 6px; animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
-    }
+    .audit{background:#1e293b;border-radius:8px;padding:10px;max-height:130px;overflow-y:auto;}
+    .arow{font-size:11px;color:#64748b;padding:3px 0;border-bottom:1px solid #0f172a;font-family:monospace;}
+    .arow:last-child{border:none;}
+    .arow span{color:#22c55e;}
+
+    .tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;}
+    .tag-green{background:#22c55e22;color:#22c55e;}
+    .tag-red{background:#ef444422;color:#ef4444;}
+    .tag-yellow{background:#f59e0b22;color:#f59e0b;}
+
+    .save-msg{font-size:11px;color:#22c55e;text-align:center;margin-top:6px;opacity:0;transition:opacity .3s;}
+    .save-msg.show{opacity:1;}
   </style>
 </head>
 <body>
+  <div class="titlebar">
+    <h1>🛡 Astra Settings</h1>
+  </div>
+
   <div class="content">
-    <h1>🛡 Astra</h1>
-    <p class="subtitle">Agentic Capability with Zero Trust Infrastructure</p>
 
-    <div class="stat-row">
-      <div class="stat">
-        <div class="stat-num" id="stat-today">0</div>
-        <div class="stat-label">Protected today</div>
+    <!-- Status banner -->
+    <div class="status-banner">
+      <div class="dot" id="dot"></div>
+      <div class="status-text">
+        <div class="status-title" id="status-title">Astra Active</div>
+        <div class="status-sub" id="status-sub">Protecting all AI traffic on this device</div>
       </div>
-      <div class="stat">
-        <div class="stat-num" id="stat-total">0</div>
-        <div class="stat-label">Total intercepted</div>
-      </div>
-      <div class="stat">
-        <div class="stat-num" id="stat-tokens">0</div>
-        <div class="stat-label">Tokens in vault</div>
-      </div>
+      <label class="toggle">
+        <input type="checkbox" id="toggle-proxy" checked>
+        <span class="slider"></span>
+      </label>
     </div>
 
-    <div class="section">
-      <div class="toggle-row">
-        <div>
-          <div class="toggle-label">
-            <span class="status-dot" id="status-dot"></span>
-            Protection Active
-          </div>
-          <div class="toggle-sub">Intercepts all AI traffic on this device</div>
+    <!-- Stats -->
+    <div class="stats">
+      <div class="stat"><div class="stat-n" id="n-today">0</div><div class="stat-l">Today</div></div>
+      <div class="stat"><div class="stat-n" id="n-total">0</div><div class="stat-l">All time</div></div>
+      <div class="stat">
+        <div class="stat-n">
+          <span id="cert-badge" class="tag tag-red">No cert</span>
         </div>
-        <label class="toggle">
-          <input type="checkbox" id="toggle-proxy">
-          <span class="slider"></span>
-        </label>
+        <div class="stat-l">Certificate</div>
       </div>
     </div>
 
+    <!-- API Key -->
     <div class="section">
       <label>Codeastra API Key</label>
-      <input type="password" id="api-key" placeholder="sk-guard-xxx">
+      <div class="input-row">
+        <input type="password" id="api-key" placeholder="sk-guard-xxxxxxxxxxxx">
+        <button class="btn btn-green" onclick="save()">Save</button>
+      </div>
+      <div class="save-msg" id="save-msg">✓ Saved</div>
     </div>
 
+    <!-- Certificate -->
     <div class="section">
-      <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
-      <button class="btn btn-secondary" onclick="loadAuditLog()">View Audit Log</button>
-      <button class="btn btn-danger" onclick="resetStats()">Reset Stats</button>
+      <label>HTTPS Certificate</label>
+      <div class="toggle-row">
+        <div>
+          <div class="tl">System Certificate</div>
+          <div class="ts">Required for HTTPS traffic interception</div>
+        </div>
+        <button class="btn btn-ghost" id="cert-btn" onclick="installCert()">Install</button>
+      </div>
     </div>
 
-    <div class="section" id="audit-section" style="display:none">
-      <label>Recent Intercepts</label>
-      <div class="audit" id="audit-log"></div>
+    <!-- Actions -->
+    <div class="section">
+      <button class="btn btn-ghost btn-full" onclick="loadAudit()">View Audit Log</button>
+      <button class="btn btn-red btn-full" onclick="resetStats()">Reset Stats</button>
     </div>
+
+    <!-- Audit log -->
+    <div id="audit-wrap" style="display:none">
+      <div class="section">
+        <label>Recent Intercepts</label>
+        <div class="audit" id="audit"></div>
+      </div>
+    </div>
+
   </div>
 
   <script>
@@ -148,54 +164,82 @@
         window.astra.getSettings(),
       ]);
 
-      document.getElementById('stat-today').textContent  = stats.today  || 0;
-      document.getElementById('stat-total').textContent  = stats.total  || 0;
-      document.getElementById('stat-tokens').textContent = stats.tokens || 0;
+      document.getElementById('n-today').textContent = stats.today || 0;
+      document.getElementById('n-total').textContent = stats.total || 0;
+      document.getElementById('api-key').value       = settings.api_key || '';
 
-      document.getElementById('api-key').value          = settings.api_key || '';
-      document.getElementById('toggle-proxy').checked   = settings.proxy_enabled;
+      const enabled = settings.proxy_enabled;
+      document.getElementById('toggle-proxy').checked = enabled;
+      document.getElementById('dot').className        = 'dot' + (enabled ? '' : ' off');
+      document.getElementById('status-title').textContent = enabled ? 'Astra Active' : 'Astra Paused';
+      document.getElementById('status-sub').textContent   = enabled
+        ? 'Protecting all AI traffic on this device'
+        : 'Protection paused — click toggle to resume';
 
-      const dot = document.getElementById('status-dot');
-      dot.style.background = settings.proxy_enabled ? '#22c55e' : '#ef4444';
+      const cert = settings.cert_installed;
+      const cb   = document.getElementById('cert-badge');
+      const cbtn = document.getElementById('cert-btn');
+      if (cert) {
+        cb.className   = 'tag tag-green';
+        cb.textContent = 'Installed';
+        cbtn.textContent = 'Remove';
+        cbtn.onclick     = removeCert;
+      } else {
+        cb.className   = 'tag tag-red';
+        cb.textContent = 'Not installed';
+        cbtn.textContent = 'Install';
+        cbtn.onclick     = installCert;
+      }
     }
 
     document.getElementById('toggle-proxy').addEventListener('change', async e => {
       await window.astra.toggleProxy(e.target.checked);
-      const dot = document.getElementById('status-dot');
-      dot.style.background = e.target.checked ? '#22c55e' : '#ef4444';
+      load();
     });
 
-    async function saveSettings() {
-      const apiKey = document.getElementById('api-key').value;
-      await window.astra.saveSettings({ api_key: apiKey });
-      const btn = document.querySelector('.btn-primary');
-      btn.textContent = '✓ Saved';
-      setTimeout(() => btn.textContent = 'Save Settings', 2000);
+    async function save() {
+      const key = document.getElementById('api-key').value.trim();
+      await window.astra.saveSettings({ api_key: key });
+      const msg = document.getElementById('save-msg');
+      msg.classList.add('show');
+      setTimeout(() => msg.classList.remove('show'), 2000);
+    }
+
+    async function installCert() {
+      document.getElementById('cert-btn').textContent = 'Installing...';
+      document.getElementById('cert-btn').disabled = true;
+      await window.astra.installCert();
+      setTimeout(() => {
+        load();
+        document.getElementById('cert-btn').disabled = false;
+      }, 2000);
+    }
+
+    async function removeCert() {
+      // Just show message — removal needs to be done manually
+      alert('To remove: open Keychain Access → System → find "Astra Local CA" → delete');
     }
 
     async function resetStats() {
-      await window.astra.resetStats();
-      load();
+      if (confirm('Reset all stats and audit log?')) {
+        await window.astra.resetStats();
+        load();
+      }
     }
 
-    async function loadAuditLog() {
-      const section = document.getElementById('audit-section');
-      const log     = document.getElementById('audit-log');
-      section.style.display = 'block';
-
-      const entries = await window.astra.getAuditLog();
-      log.innerHTML = entries.length
-        ? entries.map(e => `
-            <div class="audit-row">
-              ${new Date(e.timestamp * 1000).toLocaleTimeString()} —
-              <span>${e.tokens_in}</span> values protected →
-              ${e.hostname || 'ai-endpoint'}
-            </div>`).join('')
-        : '<div class="audit-row">No intercepts yet</div>';
+    async function loadAudit() {
+      const wrap = document.getElementById('audit-wrap');
+      const div  = document.getElementById('audit');
+      wrap.style.display = 'block';
+      const log = await window.astra.getAuditLog();
+      div.innerHTML = log.length
+        ? log.map(e => `<div class="arow">${new Date(e.timestamp).toLocaleTimeString()} — <span>+${e.count}</span> values → ${e.hostname}</div>`).join('')
+        : '<div class="arow" style="color:#475569">No intercepts yet. Add your API key above.</div>';
     }
 
+    // Auto-refresh every 3 seconds
     load();
-    setInterval(load, 5000);
+    setInterval(load, 3000);
   </script>
 </body>
 </html>
